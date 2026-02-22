@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>導師手札 - 多班級點名與通知系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --theme-dark: #78350f; --theme-light: #fef3c7; --theme-paper: #fffbeb; --theme-line: #fde68a; }
+        body { font-family: 'Noto Serif TC', serif; background-color: var(--theme-light); color: var(--theme-dark); transition: all 0.3s ease; }
+        .print-only { display: none; }
+        @media print {
+            .screen-only { display: none !important; }
+            .print-only { display: flex !important; flex-wrap: wrap; gap: 15px; width: 100%; background: white; color: black; }
+            body { background: white; margin: 0; padding: 0; }
+            .slip-card { width: calc(50% - 10px); border: 2px dashed #666; padding: 15px; box-sizing: border-box; page-break-inside: avoid; margin-bottom: 10px; font-family: 'Noto Serif TC', serif; }
+        }
+        .notebook-container { background-color: var(--theme-paper); border-radius: 8px; box-shadow: 10px 10px 20px rgba(0,0,0,0.1), -2px -2px 10px rgba(255,255,255,0.5); position: relative; padding-left: 40px; border-right: 2px solid rgba(0,0,0,0.05); border-bottom: 2px solid rgba(0,0,0,0.05); }
+        .notebook-container::before { content: ''; position: absolute; top: 0; bottom: 0; left: 20px; width: 2px; background-color: rgba(200, 50, 50, 0.3); z-index: 10; }
+        .binder-holes { position: absolute; left: 8px; top: 20px; bottom: 20px; width: 15px; display: flex; flex-direction: column; justify-content: space-between; }
+        .hole { width: 12px; height: 12px; background-color: var(--theme-light); border-radius: 50%; box-shadow: inset 2px 2px 4px rgba(0,0,0,0.2); }
+        .ruled-paper { background-image: repeating-linear-gradient(transparent, transparent 39px, var(--theme-line) 39px, var(--theme-line) 40px); line-height: 40px; }
+        .custom-checkbox { appearance: none; width: 20px; height: 20px; border: 2px solid var(--theme-dark); border-radius: 4px; background-color: transparent; cursor: pointer; position: relative; transform: translateY(5px); }
+        .custom-checkbox:checked::after { content: '✓'; position: absolute; top: -12px; left: 2px; font-size: 20px; color: #dc2626; font-weight: bold; }
+        .btn-retro { background-color: transparent; border: 2px solid var(--theme-dark); color: var(--theme-dark); transition: all 0.2s; }
+        .btn-retro:hover { background-color: var(--theme-dark); color: var(--theme-paper); }
+        .toggle-radio { display: none; }
+        .toggle-label { cursor: pointer; padding: 4px 12px; border: 1px solid var(--theme-dark); color: var(--theme-dark); transition: all 0.2s; font-size: 0.875rem; }
+        .toggle-label:first-of-type { border-radius: 20px 0 0 20px; border-right: none; }
+        .toggle-label:last-of-type { border-radius: 0 20px 20px 0; border-left: none; }
+        .toggle-radio:checked + .toggle-label { background-color: var(--theme-dark); color: var(--theme-paper); font-weight: bold; }
+        .class-tab { padding: 8px 16px; cursor: pointer; border: 2px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background-color: rgba(255, 255, 255, 0.4); transition: all 0.2s; font-weight: bold; color: var(--theme-dark); opacity: 0.7; }
+        .class-tab.active { background-color: var(--theme-paper); border-color: rgba(0,0,0,0.05); opacity: 1; box-shadow: 0 -2px 5px rgba(0,0,0,0.02); }
+        .class-tab:hover:not(.active) { background-color: rgba(255, 255, 255, 0.6); opacity: 0.9; }
+    </style>
+</head>
+<body>
+
+    <div class="screen-only min-h-screen p-4 md:p-8 flex flex-col">
+        <div class="max-w-6xl mx-auto flex-grow w-full">
+            <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+                <h1 class="text-3xl font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-book-open"></i> 導師手札
+                </h1>
+                
+                <div class="flex items-center gap-4">
+                    <div class="flex bg-white/50 rounded-full shadow-sm">
+                        <input type="radio" id="privacy-full" name="privacyMode" value="full" class="toggle-radio" onchange="updatePreview()">
+                        <label for="privacy-full" class="toggle-label" title="顯示完整姓名">完整名單</label>
+                        <input type="radio" id="privacy-mask" name="privacyMode" value="mask" class="toggle-radio" checked onchange="updatePreview()">
+                        <label for="privacy-mask" class="toggle-label border-l border-r" title="保留姓氏">保留姓氏</label>
+                        <input type="radio" id="privacy-number" name="privacyMode" value="number" class="toggle-radio" onchange="updatePreview()">
+                        <label for="privacy-number" class="toggle-label" title="只顯示座號">僅顯示座號</label>
+                    </div>
+
+                    <div class="flex items-center gap-2 bg-white/50 px-3 py-1.5 rounded-full shadow-sm">
+                        <button onclick="setTheme('brown')" class="w-5 h-5 rounded-full bg-[#78350f] border-2 border-white shadow hover:scale-110 transition"></button>
+                        <button onclick="setTheme('green')" class="w-5 h-5 rounded-full bg-[#064e3b] border-2 border-white shadow hover:scale-110 transition"></button>
+                        <button onclick="setTheme('blue')"  class="w-5 h-5 rounded-full bg-[#1e3a8a] border-2 border-white shadow hover:scale-110 transition"></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex pl-12 gap-1 mb-[-2px] relative z-10 flex-wrap" id="classTabs">
+                <div class="class-tab active" onclick="switchClass('class218', this)"><i class="fa-solid fa-bookmark"></i> 218班</div>
+                <div class="class-tab" onclick="switchClass('class219', this)"><i class="fa-solid fa-bookmark"></i> 219班</div>
+                <div class="class-tab" onclick="switchClass('class220', this)"><i class="fa-solid fa-bookmark"></i> 220班</div>
+                <div class="class-tab" onclick="switchClass('class103', this)"><i class="fa-solid fa-bookmark"></i> 103班</div>
+            </div>
+
+            <div class="notebook-container p-6 md:p-10 mb-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="binder-holes" id="binderHoles"></div>
+
+                <div class="ruled-paper pr-4">
+                    <h2 class="text-2xl font-bold mb-2 flex items-center justify-between border-b-2 border-current pb-2">
+                        <span class="flex items-center gap-3">
+                            <span><i class="fa-solid fa-users"></i> <span id="currentClassNameDisplay">218班</span> 動態紀錄</span>
+                        </span>
+                        <span class="text-sm font-normal" id="currentDate"></span>
+                    </h2>
+                    
+                    <div class="overflow-x-auto mt-4 max-h-[60vh] overflow-y-auto pr-2" style="scrollbar-width: thin;">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="sticky top-0 bg-[var(--theme-paper)] z-10">
+                                <tr class="border-b-2 border-current/50">
+                                    <th class="pb-2 w-1/4">座號姓名</th>
+                                    <th class="pb-2 text-center">缺席</th>
+                                    <th class="pb-2 text-center">缺同意書</th>
+                                    <th class="pb-2 text-center">缺通知單</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studentList"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="ruled-paper pl-0 lg:pl-4 lg:border-l-2 lg:border-dashed border-current/30 flex flex-col h-full">
+                    <h2 class="text-2xl font-bold mb-4"><i class="fa-regular fa-paper-plane"></i> <span id="currentClassNoticeDisplay">218班</span> 通知中心</h2>
+
+                    <div class="mb-4 bg-white/40 p-3 rounded-lg border border-current/20 leading-tight">
+                        <p class="font-bold mb-2">1. 選擇通知語氣：</p>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="tone" value="polite" class="custom-checkbox" checked onchange="updatePreview()"> <span>溫和提醒</span></label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="tone" value="friendly" class="custom-checkbox" onchange="updatePreview()"> <span>親切問候</span></label>
+                            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="tone" value="urgent" class="custom-checkbox" onchange="updatePreview()"> <span class="text-red-700 font-bold">急切通知</span></label>
+                        </div>
+                    </div>
+
+                    <div class="mb-4 bg-white/40 p-3 rounded-lg border border-current/20 leading-tight">
+                        <p class="font-bold mb-2">2. 附加文字叮嚀：</p>
+                        <textarea id="imageAnnotation" class="w-full bg-transparent border-b-2 border-current/30 focus:border-current outline-none resize-none leading-relaxed mt-2" rows="2" placeholder="在此輸入補充的文字叮嚀..." oninput="updatePreview()"></textarea>
+                    </div>
+
+                    <div class="mb-4 flex-grow flex flex-col">
+                        <p class="font-bold mb-1 flex justify-between items-center">
+                            <span>3. 訊息預覽 (可直接點擊編輯)：</span>
+                        </p>
+                        <textarea id="messagePreview" class="w-full flex-grow bg-white/80 p-3 rounded-lg border-2 border-current/30 min-h-[150px] text-sm whitespace-pre-wrap leading-relaxed shadow-inner outline-none focus:border-current resize-none transition-colors"></textarea>
+                    </div>
+
+                    <div class="mt-auto border-t-2 border-current/20 pt-4 flex flex-col gap-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="sendViaLineApp()" class="bg-[#00B900] hover:bg-[#009900] text-white px-3 py-3 rounded-lg font-bold shadow-md flex items-center justify-center gap-2 transform transition hover:-translate-y-1 col-span-2 text-lg">
+                                <i class="fa-brands fa-line text-2xl"></i> 一鍵開啟 LINE 傳送
+                            </button>
+                            <button onclick="copyMessage()" class="btn-retro px-3 py-2 rounded font-bold flex items-center justify-center gap-2 text-sm">
+                                <i class="fa-regular fa-copy"></i> 複製文字
+                            </button>
+                            <button onclick="printSlips()" class="bg-indigo-600 hover:bg-indigo-800 text-white px-3 py-2 rounded font-bold shadow-md flex items-center justify-center gap-2 transition text-sm">
+                                <i class="fa-solid fa-print"></i> 列印聯絡簿小卡
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="text-center mt-6 mb-2 text-sm font-bold opacity-60">© 2026 Kathy's easyline</div>
+        </div>
+    </div>
+
+    <div id="printArea" class="print-only"></div>
+
+    <div id="modal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center z-50 screen-only">
+        <div class="bg-white text-gray-800 p-6 rounded-lg max-w-sm w-full text-center shadow-2xl transform scale-95 transition-transform" id="modalContent">
+            <div id="modalIcon" class="text-4xl mb-4 text-green-500"><i class="fa-solid fa-circle-check"></i></div>
+            <h3 id="modalTitle" class="text-xl font-bold mb-2">處理成功</h3>
+            <p id="modalText" class="mb-6">您的操作已完成。</p>
+            <button onclick="closeModal()" class="bg-gray-800 text-white px-6 py-2 rounded hover:bg-gray-700">確定</button>
+        </div>
+    </div>
+
+    <script>
+        // 大師已將妳的四個班級名單完整固定在此 (包含缺漏的座號處理)
+        const classData = {
+            class218: {
+                name: "218班",
+                students: [
+                    {id: 1, name: '呂湘穎'}, {id: 2, name: '李芊菲'}, {id: 3, name: '李毓臻'}, {id: 4, name: '林知妍'},
+                    {id: 5, name: '藍云廷'}, {id: 6, name: '徐湘沂'}, {id: 7, name: '陳郁星'}, {id: 8, name: '陳祐希'},
+                    {id: 9, name: '彭鈺喬'}, {id: 10, name: '溫妍蘋'}, {id: 11, name: '詹芯語'}, {id: 12, name: '鄒亞妍'},
+                    {id: 13, name: '蔡均均'}, {id: 14, name: '蔡秉宸'}, {id: 15, name: '蕭佑伃'}, {id: 16, name: '巫允辰'},
+                    {id: 17, name: '吳彥霆'}, {id: 18, name: '呂晉逵'}
+                ],
+                status: {}
+            },
+            class219: {
+                name: "219班",
+                students: [
+                    {id: 1, name: '王芷芊'}, {id: 2, name: '朱芷妍'}, {id: 4, name: '賴語萱'}, {id: 5, name: '林芷嫻'},
+                    {id: 7, name: '孫宜勤'}, {id: 8, name: '高翊琳'}, {id: 9, name: '崔楷羚'}, {id: 10, name: '張童'},
+                    {id: 11, name: '張詠晴'}, {id: 12, name: '陳可昕'}, {id: 13, name: '陳梓琪'}, {id: 14, name: '曾郁璇'},
+                    {id: 15, name: '黃亮潔'}, {id: 16, name: '黃綵翎'}, {id: 17, name: '黃箴心'}, {id: 19, name: '楊詠婷'},
+                    {id: 20, name: '葉子艾'}, {id: 21, name: '蔡正勤'}, {id: 22, name: '林兆鉉'}, {id: 23, name: '林定謙'},
+                    {id: 24, name: '姚銘奇'}, {id: 25, name: '莊景夷'}, {id: 26, name: '陳家弘'}
+                ],
+                status: {}
+            },
+            class220: {
+                name: "220班",
+                students: [
+                    {id: 1, name: '王郁禎'}, {id: 2, name: '盧家頤'}, {id: 3, name: '吳雙榕'}, {id: 4, name: '林子薰'},
+                    {id: 5, name: '邱歆喻'}, {id: 6, name: '洪鳳孺'}, {id: 7, name: '晏莛葶'}, {id: 8, name: '高允文'},
+                    {id: 9, name: '羅苡滋'}, {id: 10, name: '許珉菲'}, {id: 11, name: '陳子琦'}, {id: 12, name: '陳宥臻'},
+                    {id: 13, name: '彭珆蓁'}, {id: 14, name: '黃歆寧'}, {id: 15, name: '劉芷妘'}, {id: 16, name: '鄭安耘'},
+                    {id: 17, name: '鄭婷蓁'}
+                ],
+                status: {}
+            },
+            class103: {
+                name: "103班",
+                students: [
+                    {id: 1, name: '王品涵'}, {id: 2, name: '江清湶'}, {id: 3, name: '吳柏葳'}, {id: 4, name: '李欣桐'},
+                    {id: 5, name: '李珊綺'}, {id: 6, name: '林雨汝'}, {id: 7, name: '徐若雅'}, {id: 8, name: '徐誼安'},
+                    {id: 9, name: '梁禕珊'}, {id: 10, name: '彭子晏'}, {id: 11, name: '彭品畇'}, {id: 12, name: '廖思逸'},
+                    {id: 13, name: '劉采潔'}, {id: 14, name: '劉恩彤'}, {id: 15, name: '鄭天愛'}, {id: 16, name: '謝依婷'},
+                    {id: 17, name: '羅愛哩'}, {id: 18, name: '王廷旭'}, {id: 19, name: '呂仕達'}, {id: 20, name: '李衍昀'},
+                    {id: 21, name: '林品叡'}, {id: 22, name: '洪浚恩'}, {id: 23, name: '紀學融'}, {id: 24, name: '陳中浩'},
+                    {id: 25, name: '陳佑安'}, {id: 26, name: '陳博翊'}, {id: 27, name: '陳博鈞'}, {id: 28, name: '黃紹綸'},
+                    {id: 29, name: '詹承諺'}, {id: 31, name: '賴譽文'}, {id: 32, name: '謝政宏'}
+                ],
+                status: {}
+            }
+        };
+
+        let currentClassKey = 'class218'; // 預設打開 218班
+
+        const templates = {
+            polite: { greeting: "家長您好，今日班級狀況提醒：\n", absent: "【未到校名單】：", consent: "【未交同意書】：", notice: "【未交通知單】：", footer: "\n再麻煩家長協助留意，感謝配合！導師 敬上。" },
+            friendly: { greeting: "親愛的爸爸媽媽們好～今天有幾件事情要麻煩大家幫忙留意喔！\n", absent: "📍 今天請假/未到的寶貝：", consent: "📝 還沒交回「同意書」的寶貝：", notice: "✉️ 還沒交回「通知單」的寶貝：", footer: "\n如果已經讓孩子帶在書包裡了，請忽略此訊息。祝大家有個美好的一天！😊" },
+            urgent: { greeting: "【‼️重要班級通知‼️】家長您好，以下為急需處理之事項：\n", absent: "⚠️ 今日未到校：", consent: "⚠️ 同意書逾期未交：", notice: "⚠️ 通知單逾期未交：", footer: "\n請名單上的家長【務必於明日】讓學生繳回表單，或主動與導師聯繫。謝謝！" }
+        };
+
+        window.onload = () => {
+            const today = new Date();
+            document.getElementById('currentDate').innerText = `${today.getFullYear()}/${today.getMonth()+1}/${today.getDate()}`;
+            const binder = document.getElementById('binderHoles');
+            for(let i=0; i<15; i++) binder.innerHTML += `<div class="hole"></div>`;
+            
+            // 初始化狀態
+            Object.keys(classData).forEach(key => {
+                classData[key].students.forEach(s => {
+                    classData[key].status[s.id] = { absent: false, consent: false, notice: false };
+                });
+            });
+            renderStudentList(); 
+            updatePreview();
+        };
+
+        function switchClass(classKey, element) {
+            currentClassKey = classKey;
+            const className = classData[classKey].name;
+            
+            // 更新標題文字
+            document.getElementById('currentClassNameDisplay').innerText = className;
+            document.getElementById('currentClassNoticeDisplay').innerText = className;
+
+            // 切換頁籤樣式
+            document.querySelectorAll('.class-tab').forEach(tab => tab.classList.remove('active'));
+            element.classList.add('active');
+
+            // 重新渲染該班級名單與預覽
+            renderStudentList(); 
+            updatePreview();
+        }
+
+        function setTheme(color) {
+            const root = document.documentElement;
+            if (color === 'brown') { root.style.setProperty('--theme-dark', '#78350f'); root.style.setProperty('--theme-light', '#fef3c7'); root.style.setProperty('--theme-paper', '#fffbeb'); root.style.setProperty('--theme-line', '#fde68a'); } 
+            else if (color === 'green') { root.style.setProperty('--theme-dark', '#064e3b'); root.style.setProperty('--theme-light', '#d1fae5'); root.style.setProperty('--theme-paper', '#ecfdf5'); root.style.setProperty('--theme-line', '#a7f3d0'); } 
+            else if (color === 'blue') { root.style.setProperty('--theme-dark', '#1e3a8a'); root.style.setProperty('--theme-light', '#dbeafe'); root.style.setProperty('--theme-paper', '#eff6ff'); root.style.setProperty('--theme-line', '#bfdbfe'); }
+        }
+
+        function renderStudentList() {
+            const tbody = document.getElementById('studentList');
+            tbody.innerHTML = '';
+            const currentStudents = classData[currentClassKey].students;
+            const currentStatus = classData[currentClassKey].status;
+
+            currentStudents.forEach(student => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-current/20 hover:bg-black/5 transition";
+                tr.innerHTML = `
+                    <td class="py-1">${student.id.toString().padStart(2,'0')} ${student.name}</td>
+                    <td class="text-center"><input type="checkbox" class="custom-checkbox" onchange="toggleStatus(${student.id}, 'absent', this.checked)" ${currentStatus[student.id].absent ? 'checked' : ''}></td>
+                    <td class="text-center"><input type="checkbox" class="custom-checkbox" onchange="toggleStatus(${student.id}, 'consent', this.checked)" ${currentStatus[student.id].consent ? 'checked' : ''}></td>
+                    <td class="text-center"><input type="checkbox" class="custom-checkbox" onchange="toggleStatus(${student.id}, 'notice', this.checked)" ${currentStatus[student.id].notice ? 'checked' : ''}></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function toggleStatus(id, type, isChecked) {
+            classData[currentClassKey].status[id][type] = isChecked;
+            updatePreview();
+        }
+
+        function getMaskedName(student) {
+            const mode = document.querySelector('input[name="privacyMode"]:checked').value;
+            const paddedId = student.id.toString().padStart(2, '0');
+            if (mode === 'number') return `${paddedId}號`;
+            else if (mode === 'mask') {
+                const name = student.name;
+                let maskedName = "";
+                if (name.length <= 2) maskedName = name.substring(0, 1) + "Ｏ";
+                else if (name.length === 3) maskedName = name.substring(0, 1) + "Ｏ" + name.substring(2);
+                else maskedName = name.substring(0, 2) + "Ｏ".repeat(name.length - 3) + name.substring(name.length - 1);
+                return `${paddedId}號 ${maskedName}`;
+            } else return `${paddedId}號 ${student.name}`;
+        }
+
+        function generateMessageText() {
+            const selectedTone = document.querySelector('input[name="tone"]:checked').value;
+            const t = templates[selectedTone];
+            const className = classData[currentClassKey].name;
+            const currentStudents = classData[currentClassKey].students;
+            const currentStatus = classData[currentClassKey].status;
+            
+            let absentList = [], consentList = [], noticeList = [];
+
+            currentStudents.forEach(s => {
+                const displayName = getMaskedName(s);
+                if(currentStatus[s.id].absent) absentList.push(displayName);
+                if(currentStatus[s.id].consent) consentList.push(displayName);
+                if(currentStatus[s.id].notice) noticeList.push(displayName);
+            });
+
+            let finalMsg = "", hasContent = false;
+            if (absentList.length > 0) { finalMsg += `${t.absent}\n  ${absentList.join('\n  ')}\n\n`; hasContent = true; }
+            if (consentList.length > 0) { finalMsg += `${t.consent}\n  ${consentList.join('\n  ')}\n\n`; hasContent = true; }
+            if (noticeList.length > 0) { finalMsg += `${t.notice}\n  ${noticeList.join('\n  ')}\n\n`; hasContent = true; }
+
+            const annotation = document.getElementById('imageAnnotation').value.trim();
+            if (annotation) { finalMsg += `【導師叮嚀】：\n${annotation}\n\n`; hasContent = true; }
+
+            if (!hasContent) return "無任何通知事項。(請在左側勾選學生狀態，或輸入叮嚀)";
+            
+            return `【${className}】` + t.greeting + "\n" + finalMsg + t.footer;
+        }
+
+        function updatePreview() {
+            document.getElementById('messagePreview').value = generateMessageText();
+        }
+
+        function executeCopy(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            let successful = false;
+            try { successful = document.execCommand('copy'); } 
+            catch (err) { console.error('複製失敗', err); }
+            document.body.removeChild(textArea);
+            return successful;
+        }
+
+        function sendViaLineApp() {
+            const msg = document.getElementById('messagePreview').value.trim();
+            if(msg === "" || msg.includes("無任何通知事項")) { showModal('提示', '請先勾選名單再發送喔！', 'error'); return; }
+            
+            executeCopy(msg); // 自動複製
+            const encodedMsg = encodeURIComponent(msg);
+            const lineUrl = `https://line.me/R/msg/text/?${encodedMsg}`;
+            window.open(lineUrl, '_blank');
+
+            setTimeout(() => {
+                showModal('跳轉提示', '✅ 訊息已經為您「自動複製」了！<br><br>請直接在 LINE 群組的對話框<strong>貼上</strong>即可發送。', 'success');
+            }, 500);
+        }
+
+        function copyMessage() {
+            const msg = document.getElementById('messagePreview').value.trim();
+            if(msg === "" || msg.includes("無任何通知事項")) { showModal('錯誤', '沒有內容可複製', 'error'); return; }
+            if (executeCopy(msg)) { showModal('複製成功', '文字已複製，可直接貼上至群組。', 'success'); } 
+            else { showModal('複製失敗', '請手動選取文字複製。', 'error'); }
+        }
+
+        function printSlips() {
+            const printArea = document.getElementById('printArea');
+            printArea.innerHTML = ''; 
+            let hasAnyNotice = false;
+            const today = new Date();
+            const dateStr = `${today.getFullYear()}/${today.getMonth()+1}/${today.getDate()}`;
+            
+            const currentStudents = classData[currentClassKey].students;
+            const currentStatus = classData[currentClassKey].status;
+
+            currentStudents.forEach(s => {
+                const status = currentStatus[s.id];
+                if (status.absent || status.consent || status.notice) {
+                    hasAnyNotice = true;
+                    const slip = document.createElement('div');
+                    slip.className = 'slip-card';
+                    
+                    const boxAbsent = status.absent ? '☑️ <strong style="color:black;">今日未到校</strong>' : '<span style="color:#999;">☐ 今日未到校</span>';
+                    const boxConsent = status.consent ? '☑️ <strong style="color:black;">未繳交同意書</strong>' : '<span style="color:#999;">☐ 未繳交同意書</span>';
+                    const boxNotice = status.notice ? '☑️ <strong style="color:black;">未繳交通知單</strong>' : '<span style="color:#999;">☐ 未繳交通知單</span>';
+
+                    const annotation = document.getElementById('imageAnnotation').value.trim();
+                    const annotationHtml = annotation ? `<p style="font-size:12px; margin-top:8px; border-top:1px dashed #ccc; padding-top:5px;"><strong>導師叮嚀：</strong><br>${annotation}</p>` : '';
+
+                    slip.innerHTML = `
+                        <h3 style="text-align:center; margin:0 0 10px 0; border-bottom:2px solid #000; padding-bottom:5px;">📌 導師通知單</h3>
+                        <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:10px;">
+                            <span><strong>${s.id.toString().padStart(2,'0')}號 ${s.name}</strong> 家長 您好：</span>
+                            <span>日期：${dateStr}</span>
+                        </div>
+                        <p style="font-size:13px; margin-bottom:5px;">貴子弟今日有以下事項需您協助配合：</p>
+                        <ul style="list-style-type:none; padding-left:5px; margin:0; line-height:1.8; font-size:14px;">
+                            <li>${boxAbsent}</li>
+                            <li>${boxConsent}</li>
+                            <li>${boxNotice}</li>
+                        </ul>
+                        ${annotationHtml}
+                        <div style="margin-top:25px; text-align:right; font-size:14px;">
+                            家長簽章：<span style="display:inline-block; width:120px; border-bottom:1px solid #000;"></span>
+                        </div>
+                    `;
+                    printArea.appendChild(slip);
+                }
+            });
+
+            if (!hasAnyNotice) { showModal('提示', '目前沒有任何學生被勾選未交事項，不需要列印喔！', 'error'); return; }
+            window.print();
+        }
+
+        function showModal(title, text, type) {
+            document.getElementById('modalTitle').innerText = title; 
+            document.getElementById('modalText').innerHTML = text;
+            const icon = document.getElementById('modalIcon');
+            icon.innerHTML = type === 'success' ? '<i class="fa-solid fa-circle-check text-green-500"></i>' : '<i class="fa-solid fa-circle-exclamation text-red-500"></i>';
+            document.getElementById('modal').classList.remove('hidden');
+        }
+        function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+    </script>
+</body>
+</html>
